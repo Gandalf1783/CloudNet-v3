@@ -21,7 +21,7 @@ public enum ProxyState {
   DRAINING("drain"),
   DOWN("down");
 
-  private String haproxyString;
+  private final String haproxyString;
 
   ProxyState(String haproxyString) {
     this.haproxyString = haproxyString;

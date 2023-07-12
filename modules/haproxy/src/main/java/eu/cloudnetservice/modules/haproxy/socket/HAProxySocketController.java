@@ -35,21 +35,19 @@ import java.net.Socket;
 @Singleton
 public class HAProxySocketController implements Runnable {
 
-  public static String state = "up";
-
   private static final Logger LOGGER = LogManager.logger(HAProxySocketController.class);
   private static boolean shouldStop = false;
 
   private ServerSocket serverSocket;
 
-  private int port = 7331;
+  private int tcpPort = 7331;
 
   public void openSocket() {
     try {
-      this.serverSocket = new ServerSocket(this.port);
-      LOGGER.info("Running HAProxy Agent-Check on TCP " + this.port);
+      this.serverSocket = new ServerSocket(this.tcpPort);
+      LOGGER.info("Running HAProxy Agent-Check on TCP " + this.tcpPort);
     } catch (IOException e) {
-      LOGGER.severe("HAProxy: Could not open ServerSocket at " + this.port, e);
+      LOGGER.severe("HAProxy: Could not open ServerSocket at " + this.tcpPort, e);
     }
   }
 

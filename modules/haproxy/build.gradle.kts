@@ -1,5 +1,3 @@
-import eu.cloudnetservice.gradle.juppiter.ModuleConfiguration
-
 /*
  * Copyright 2019-2023 CloudNetService team & contributors
  *
