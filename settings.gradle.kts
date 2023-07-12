@@ -64,7 +64,8 @@ initializeSubProjects("modules",
   "npcs",
   "storage-s3",
   "dockerized-services",
-  "influx")
+  "influx",
+  "haproxy")
 // launcher
 initializeSubProjects("launcher", "java8", "java17", "patcher")
 
