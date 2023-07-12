@@ -22,7 +22,6 @@ import eu.cloudnetservice.driver.event.EventManager;
 import eu.cloudnetservice.driver.module.ModuleLifeCycle;
 import eu.cloudnetservice.driver.module.ModuleTask;
 import eu.cloudnetservice.driver.module.driver.DriverModule;
-import eu.cloudnetservice.modules.haproxy.command.HAProxyCommand;
 import eu.cloudnetservice.modules.haproxy.listener.ServiceListener;
 import eu.cloudnetservice.modules.haproxy.socket.HAProxySocketController;
 import eu.cloudnetservice.node.command.CommandProvider;
