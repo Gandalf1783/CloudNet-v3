@@ -52,18 +52,6 @@ public class CloudNetHAProxyModule extends DriverModule {
     eventManager.registerListener(ServiceListener.class);
   }
 
-
-  /**
-   * Registers the HAProxy Module Test Command
-   *
-   * @param commandProvider CommandProvider where commands will be registered
-   */
-  @ModuleTask(lifecycle = ModuleLifeCycle.STARTED)
-  public void registerCommand(@NonNull CommandProvider commandProvider) {
-    // register the bridge command
-    commandProvider.register(HAProxyCommand.class);
-  }
-
   @ModuleTask(lifecycle = ModuleLifeCycle.STARTED)
   public void startSocketServer(@NonNull CommandProvider commandProvider) {
     // register the bridge command
