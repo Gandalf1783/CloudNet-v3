@@ -16,19 +16,19 @@
 
 package eu.cloudnetservice.modules.haproxy;
 
-public enum ProxyState {
-  UP("up ready"),
-  DRAINING("drain"),
-  DOWN("down");
+public enum HAProxyState {
+  UP("up ready"), // Proxy is accepting connections
+  DRAINING("drain"), // Proxy should be drained, e.g. no new connections
+  DOWN("down"); // Proxy is not accepting any connections
 
-  private final String haproxyString;
+  private final String haproxyAgentCheckString; // String returned to HAProxy upon an Agent-Check
 
-  ProxyState(String haproxyString) {
-    this.haproxyString = haproxyString;
+  HAProxyState(String haproxyAgentCheckString) {
+    this.haproxyAgentCheckString = haproxyAgentCheckString;
   }
 
   @Override
   public String toString() {
-    return this.haproxyString;
+    return this.haproxyAgentCheckString;
   }
 }

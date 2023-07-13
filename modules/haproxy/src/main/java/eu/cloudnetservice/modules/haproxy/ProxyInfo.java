@@ -18,18 +18,18 @@ package eu.cloudnetservice.modules.haproxy;
 
 public class ProxyInfo {
 
-  public ProxyState state;
+  public HAProxyState state;
   public int maxPlayers;
 
   public ProxyInfo() {
-    this(100, ProxyState.DOWN);
+    this(100, HAProxyState.DOWN);
   }
 
   public ProxyInfo(int maxPlayers) {
-    this(maxPlayers, ProxyState.DOWN);
+    this(maxPlayers, HAProxyState.DOWN);
   }
 
-  public ProxyInfo(int maxPlayers, ProxyState state) {
+  public ProxyInfo(int maxPlayers, HAProxyState state) {
     this.maxPlayers = maxPlayers;
     this.state = state;
   }

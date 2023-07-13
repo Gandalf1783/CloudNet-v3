@@ -30,7 +30,7 @@ import java.net.Socket;
 
 
 /**
- * This class reqplies to HAProxy Agent-Check Requests to control the Proxy's mode in HAProxy, e.g. DRAIN, DOWN, UP etc.
+ * This class replies to HAProxy Agent-Check Requests to control the Proxy's mode in HAProxy, e.g. DRAIN, DOWN, UP etc.
  */
 @Singleton
 public class HAProxySocketController implements Runnable {
@@ -40,7 +40,7 @@ public class HAProxySocketController implements Runnable {
 
   private ServerSocket serverSocket;
 
-  private int tcpPort = 7331;
+  private final int tcpPort = 7331; // TCPPort where HAProxy send Agent-Checks to
 
   public void openSocket() {
     try {
@@ -57,14 +57,14 @@ public class HAProxySocketController implements Runnable {
   public void run() {
     this.openSocket(); // Open the Server Socket
 
-    if (this.serverSocket.isClosed()) {
+    if (this.serverSocket.isClosed()) { // An issue occured, Socket was not opened
       LOGGER.info("Cannot serve. Exiting Thread.");
       return;
     }
 
     while (!shouldStop) {
       try {
-        Socket socket = this.serverSocket.accept();
+        Socket socket = this.serverSocket.accept(); // Wait for incoming connection
 
         byte[] buffer = new byte[1024]; // Buffer to read the "Agent-Send" Option
         int read;
@@ -92,7 +92,7 @@ public class HAProxySocketController implements Runnable {
         // If Proxy is not known, assume it does not acceppt any connections
         if (info == null) {
           LOGGER.warning("HAProxy Agent-Send is not known (" + proxyName + ")!");
-          writer.write("down\r\n");
+          writer.write("maxconn:0 down\r\n"); // Tells HAProxy to not serve any connections
           writer.flush();
           writer.close();
           continue;

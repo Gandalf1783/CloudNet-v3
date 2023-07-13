@@ -17,17 +17,16 @@
 package eu.cloudnetservice.modules.haproxy.listener;
 
 import static eu.cloudnetservice.modules.haproxy.CloudNetHAProxyModule.proxiesWaitingForStop;
+import static eu.cloudnetservice.modules.haproxy.CloudNetHAProxyModule.proxyInfoHashMap;
 
 import eu.cloudnetservice.common.log.LogManager;
 import eu.cloudnetservice.common.log.Logger;
 import eu.cloudnetservice.driver.event.EventListener;
 import eu.cloudnetservice.driver.event.events.service.CloudServiceUpdateEvent;
-import eu.cloudnetservice.driver.service.ServiceInfoSnapshot;
 import eu.cloudnetservice.driver.service.ServiceLifeCycle;
 import eu.cloudnetservice.modules.bridge.BridgeDocProperties;
-import eu.cloudnetservice.modules.haproxy.CloudNetHAProxyModule;
+import eu.cloudnetservice.modules.haproxy.HAProxyState;
 import eu.cloudnetservice.modules.haproxy.ProxyInfo;
-import eu.cloudnetservice.modules.haproxy.ProxyState;
 import eu.cloudnetservice.node.event.service.CloudServicePreLifecycleEvent;
 import jakarta.inject.Singleton;
 import lombok.NonNull;
@@ -38,99 +37,148 @@ public class ServiceListener {
   private static final Logger LOGGER = LogManager.logger(ServiceListener.class);
 
 
+  /**
+   * This Method processes the startup of a Proxy Service.<br>
+   * It sets the ProxyState to {@link HAProxyState#UP}<br><br>
+   *
+   * This method does NOT cancel the event.<br>
+   *
+   * @param event Event to process. Must be passed by the listener.
+   */
+  private void processProxyStartEvent(@NonNull CloudServicePreLifecycleEvent event) {
+    final String proxyName = event.serviceInfo().name();
+
+    ProxyInfo info = proxyInfoHashMap.get(proxyName);
+
+    if (info == null) { // If the ProxyInfoHashMap does not contain information for this proxy, create a new ProxyInfo
+      info = new ProxyInfo();
+      proxyInfoHashMap.put(proxyName, info); // Save it
+    }
+
+    info.state = HAProxyState.UP;
+
+
+    LOGGER.info("Proxy \"" + proxyName + "\" has been registered for HAProxy and is now acceptin connections.");
+
+    event.cancelled(false); // Make sure to not cancel the event
+  }
+
+  /**
+   * This method processes the stop of a Proxy Service.<br><br>
+   *
+   * It checks if the Proxy is empty. If yes, the Proxy will be taken down directly (returns 1)<br>
+   * Alternatively, it will check if a Proxy has been drained previously and is now stopping (returns 2)<br><br>
+   *
+   * @param event Event to process. Must be passed by the listener.
+   * @return Returns the action that was taken as an int.<br>
+   * (1) => Proxy had no online players, stopped immediately<br>
+   * (2) => Proxy was drained properly and is in the ProxyState = DOWN. It will also be stopped.<br>
+   * (3) => Proxy has either players online or is still in the ProxyState = UP. It won't be stopped, but drained until no
+   * Players are connected. <br>
+   */
+  private int processProxyStopEvent(@NonNull CloudServicePreLifecycleEvent event) {
+    final String proxyName = event.serviceInfo().name();
+
+    // Is the Proxy already waiting for stop?
+    boolean isWaitingForStop = proxiesWaitingForStop.contains(proxyName);
+    ProxyInfo info = proxyInfoHashMap.get(proxyName);
+    ServiceLifeCycle targetLifecycle = event.targetLifecycle();
+
+    //Test if Proxy has no online Players
+    if (event.serviceInfo().readProperty(BridgeDocProperties.ONLINE_COUNT) == 0) {
+      info.state = HAProxyState.DOWN; // Mark Proxy as DOWN
+      event.cancelled(false); // Let CloudNet stop the proxy
+      return 1;
+    }
+
+    // If the Proxy is already waiting for stop and is Down, dont cancel!
+    // This is a safe state with No Connections to the Proxy and can therefore be shutdown.
+    if (isWaitingForStop && info.state == HAProxyState.DOWN) {
+      event.cancelled(false);
+      proxiesWaitingForStop.remove(proxyName); // Remove it because service is no longer waiting for stop
+      return 2;
+    }
+
+    // From here, the Proxy will not be able to stop directly. It most likely still has players on it.
+    // Therefore, we set the Draining State for HAProxy to block new connections to this Proxy.
+
+    event.cancelled(true); // Do not allow CloudNet to stop Service yet
+    info.state = HAProxyState.DRAINING; // Draining via HAProxy
+    proxiesWaitingForStop.add(event.serviceInfo().name()); // Proxy is waiting for Stop (Checked for connected players = 0 for sending stop)
+
+    LOGGER.info("Proxy " + proxyName + " wants to reach state " + targetLifecycle.name() + ". Draining Service via HAProxy.");
+
+    return 3;
+  }
+
+
+  /**
+   * This method retrieves a {@link CloudServicePreLifecycleEvent} and checks for a proxy startup or shutdown.<br><br>
+   *
+   * This method will cancel an event if necessary. <br><br>
+   *
+   * @param event Event to process. Passed by CloudNet.
+   */
   @EventListener
   public void handleLifecycleChangeEvent(@NonNull CloudServicePreLifecycleEvent event) {
 
-    if (!event.serviceInfo().configuration().groups().contains("Proxy")) {
-      return;
+    if (!event.serviceInfo().configuration().groups().contains("Proxy")) { // Check if Service is a Proxy
+      return; //If is not a Proxy, return and ignore event
     }
 
-    //Start Event here
-    if (event.serviceInfo().lifeCycle() == ServiceLifeCycle.PREPARED && event.targetLifecycle() == ServiceLifeCycle.RUNNING) {
-      ProxyInfo info = CloudNetHAProxyModule.proxyInfoHashMap.get(event.serviceInfo().name());
+    ServiceLifeCycle currentLifeCycle = event.serviceInfo().lifeCycle();
+    ServiceLifeCycle targetLifeCycle = event.targetLifecycle();
 
-      if (info == null) {
-        info = new ProxyInfo();
-      }
-
-      info.state = ProxyState.UP;
-
-      CloudNetHAProxyModule.proxyInfoHashMap.put(event.serviceInfo().name(), info);
+    // The Service is stopping or Restarting if the targetLifeCycle is DELETED, PREPARED or STOPPED
+    boolean isNextStateStopOrRestart = (targetLifeCycle == ServiceLifeCycle.DELETED
+                                        || targetLifeCycle == ServiceLifeCycle.PREPARED
+                                        || targetLifeCycle == ServiceLifeCycle.STOPPED);
 
 
-      LOGGER.info("Proxy \"" + event.serviceInfo().name() + "\" has been registered for HAProxy and is now UP/READY.");
-      event.cancelled(false);
+    // Start Event here
+    // If the current Lifecycle is PREPARED and changing to RUNNING, process the Proxy Start
+    if (currentLifeCycle == ServiceLifeCycle.PREPARED && targetLifeCycle == ServiceLifeCycle.RUNNING) {
+      this.processProxyStartEvent(event);
       return;
     }
 
     //Stop Event here
-    if (!(event.serviceInfo().lifeCycle() == ServiceLifeCycle.RUNNING
-      &&
-      (event.targetLifecycle() == ServiceLifeCycle.DELETED
-        || event.targetLifecycle() == ServiceLifeCycle.PREPARED
-        || event.targetLifecycle() == ServiceLifeCycle.STOPPED
-      )
-    )) {
+    // If the current Lifecycle is RUNNING and changing to DELETED, PREPARED or STOPPED, process the Proxy Stop
+    if (currentLifeCycle == ServiceLifeCycle.RUNNING  && isNextStateStopOrRestart) {
+      this.processProxyStopEvent(event);
       return;
     }
-
-    boolean isWaitingForStop = proxiesWaitingForStop.contains(event.serviceInfo().name());
-    ProxyState currentProxyState = CloudNetHAProxyModule.proxyInfoHashMap.get(event.serviceInfo().name()).state;
-
-    if (isWaitingForStop && currentProxyState == ProxyState.DOWN) { // If the Proxy is already waiting for stop and is Down, dont cancel!
-      event.cancelled(false);
-      proxiesWaitingForStop.remove(event.serviceInfo().name()); // Remove it because service is no longer waiting for stop
-      return;
-    }
-
-    if(event.serviceInfo().readProperty(BridgeDocProperties.ONLINE_COUNT) == 0) {
-      ProxyInfo info = CloudNetHAProxyModule.proxyInfoHashMap.get(event.serviceInfo().name());
-      info.state = ProxyState.DOWN;
-      event.cancelled(false);
-      return;
-    }
-
-    event.cancelled(true);
-    proxiesWaitingForStop.add(event.serviceInfo().name()); // Proxy is waiting for Stop (Checked for connected players = 0 for sending stop)
-
-    LOGGER.info("HAProxy Lifecycle Change Event for Proxy "
-      + event.serviceInfo().name() + " which wants to change to "
-      + event.targetLifecycle().name());
-
-    LOGGER.warning("Draining Service \"" + event.serviceInfo().name() + "\"");
-
-    ProxyInfo info = CloudNetHAProxyModule.proxyInfoHashMap.get(event.serviceInfo().name());
-
-    if (info == null) {
-      info = new ProxyInfo();
-    }
-
-    info.state = ProxyState.DRAINING;
-
-    CloudNetHAProxyModule.proxyInfoHashMap.put(event.serviceInfo().name(), info);
-
   }
 
+  /**
+   * This method handles a Player Disconnect and checks if any Proxy is waiting for a stop.<br>
+   * If a proxy is currently waiting for stop and has no more players, it will stop the Proxy.<br>
+   *
+   * @param event Event to process. Passed by CloudNet.
+   */
   @EventListener
   public void handleProxyPlayerDisconnect(CloudServiceUpdateEvent event) {
-    ServiceInfoSnapshot loginServiceInfo = event.serviceInfo();
-
-    if (!proxiesWaitingForStop.contains(loginServiceInfo.serviceId().name())) { // Proxy does not wait for stop, return!
-      LOGGER.info(event.serviceInfo().name() + " does not wait to stop!");
+    final String proxyName = event.serviceInfo().name();
+    boolean isWaitingForStop = proxiesWaitingForStop.contains(proxyName);
+    
+    if (!isWaitingForStop) { // Proxy does not wait for stop, ignore the event.
       return;
     }
 
+    ProxyInfo info = proxyInfoHashMap.get(event.serviceInfo().name());
+
+
+    // Get player count
     int players = event.serviceInfo().readProperty(BridgeDocProperties.ONLINE_COUNT);
 
 
-
+    // No more players online, stop the Service
     if (players == 0) {
-      LOGGER.info(loginServiceInfo.name() + " is drained! Setting state to down and finally stopping service");
+      LOGGER.info("Proxy " + proxyName + " has been drained and is now stopping.");
 
-      ProxyInfo info = CloudNetHAProxyModule.proxyInfoHashMap.get(event.serviceInfo().name());
-      info.state = ProxyState.DOWN;
-      CloudNetHAProxyModule.proxyInfoHashMap.put(event.serviceInfo().name(), info);
+      info.state = HAProxyState.DOWN;
 
+      // Let CloudNet stop the Service. This will trigger the CloudServicePreLifecycleEvent.
       event.serviceInfo().provider().stop();
     }
   }
