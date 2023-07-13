@@ -22,7 +22,6 @@ dependencies {
   "compileOnly"(projects.modules.bridge)
 }
 
-
 moduleJson {
   name = "CloudNet-HAProxy"
   author = "CloudNetService"
